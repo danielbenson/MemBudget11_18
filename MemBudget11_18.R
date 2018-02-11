@@ -321,3 +321,124 @@ ggsave("Quarterly Budget Analysis.png",
        dpi=600, dev='png', height=8.1, width=13, units="in", Q_Group)
 
 ## End Part 1 ##
+
+## Begin Part 2 ##
+
+# Let's subset the data in a way helpful for distribution fitting. We'll start
+# by ordering according to fiscal quarters.
+
+library("forecast")
+library("tseries")
+
+# Here we'll make a table for high-level fitting/forecasting. The "Year" column
+# I added will come into play in Part 3.
+
+MBudget_UD <- QBudget %>%
+        select(BUDGET_NAME, PERIOD_NAME, PTD_BALANCE) %>%
+        unite("FY_Month", BUDGET_NAME, PERIOD_NAME, remove = TRUE) %>%
+        group_by(FY_Month) %>%
+        summarise(Sum_Balance = sum(PTD_BALANCE)) %>%
+        mutate(Year = c(2011,2011,2011,2011,2011,2011,2011,2011,2011,2011,2011,
+                2011,2012,2012,2012,2012,2012,2012,2012,2012,2012,2012,
+                2012,2012,2013,2013,2013,2013,2013,2013,2013,2013,2013,
+                2013,2013,2013,2014,2014,2014,2014,2014,2014,2014,2014,
+                2014,2014,2014,2014,2015,2015,2015,2015,2015,2015,2015,
+                2015,2015,2015,2015,2015,2016,2016,2016,2016,2016,2016,
+                2016,2016,2016,2016,2016,2016,2017,2017,2017,2017,2017,
+                2017,2017,2017,2017,2017,2017,2017,2018,2018,2018,2018,
+                2018,2018,2018,2018,2018,2018,2018,2018))
+
+# Now we'll prep the table for use as a time series.
+
+MBudget_UD$FY_Month %<>%
+        gsub(pattern = " ADOPTED", replacement = "") %>%
+        gsub(pattern = "FY", replacement = "") %>%
+        gsub(pattern = "_", replacement = "") %>%
+        gsub(pattern = "January", replacement = "01") %>%
+        gsub(pattern = "February", replacement = "02") %>%
+        gsub(pattern = "March", replacement = "03") %>%
+        gsub(pattern = "April", replacement = "04") %>%
+        gsub(pattern = "May", replacement = "05") %>%
+        gsub(pattern = "June", replacement = "06") %>%
+        gsub(pattern = "July", replacement = "07") %>%
+        gsub(pattern = "August", replacement = "08") %>%
+        gsub(pattern = "September", replacement = "09") %>%
+        gsub(pattern = "October", replacement = "10") %>%
+        gsub(pattern = "November", replacement = "11") %>%
+        gsub(pattern = "December", replacement = "12") %>% 
+        as.yearmon("%y%m")
+        
+
+# Store as extensible or regular old time-series object. Using the "order.by"
+# parameter to prevent the forcasting model from confusing the index with the
+# order of months.
+
+MBudget_UDxt <- xts(MBudget_UD[,2:3], frequency = 12,
+                    order.by = MBudget_UD$FY_Month)
+
+MBudget_UDt <- ts(MBudget_UD, frequency = 12, start = 2011)
+
+# Use the Holt-Winters' additive method to forecast FY2019/2020 budgets.
+# I left most parameters at their defaults because the results ought to be 
+# suitable at least for our conversational purposes. Realistically,
+# Holt-Winters' may be better suited for production demand, and municipal budgets
+# tend to rely on a more custom-tailored set of models that are typically 
+# multivariate, though simple linear extrapolations of the past are not unheard
+# of.
+
+MBudget_HW <- hw(MBudget_UDxt$Sum_Balance, seasonal = "additive", damped = TRUE)
+
+MBudget_HW[["model"]]
+
+# For the plot, I'll define x-axis tick labels in "FY__" format, because otherwise
+# we'll just end up with a value for the year based on its position in the time
+# series (i.e. 1:10).
+
+MBudget_HWPlot <- autoplot(MBudget_HW, ylab="Balance",
+        xlab="FY11-FY20, Month to Month") +
+        scale_y_continuous(labels = scales::dollar,
+        breaks = scales::pretty_breaks(n = 10)) + 
+        scale_x_continuous(breaks = c(1:11),
+        labels = c("BEGIN FY11","FY12","FY13","FY14","FY15","FY16","FY17","FY18",
+                   "FY19","FY20","END FY20"), limits = c(1,11)) +
+        labs(fill="CI (%)") +
+        ggtitle("Forecasts from Holt-Winters' additive method,
+                City of Memphis Budget")
+
+MBudget_HWPlot
+
+HWMeanTab <- tibble(MBudget_HW$mean)
+
+#ggsave("Forecasts from Holt-Winters' additive method.png",
+#       dpi=600, dev='png', height=8, width=11.3, units="in", MBudget_HWPlot)
+
+# write.csv(MBudget_UD, file = "MBudget_UD.csv", row.names=FALSE)
+
+# Now I'll repeat the process to obtain a forecast based on an ARIMA model
+
+MBudget_aARIMA <- auto.arima(MBudget_UDxt$Sum_Balance)
+
+MBudget_ARIMA_Model <- Arima(MBudget_UDxt$Sum_Balance,
+                 seasonal = list(order = c(0,1,0), period = 12))
+        
+MBudget_ARIMA_Forecast <- forecast(MBudget_ARIMA_Model, h=24)
+
+MBudget_ARPlot <- autoplot(MBudget_ARIMA_Forecast, ylab="Balance",
+                           xlab="FY11-FY20, Month to Month") +
+        scale_y_continuous(labels = scales::dollar,
+        breaks = scales::pretty_breaks(n = 10)) + 
+        scale_x_continuous(breaks = c(1:11),
+        labels = c("BEGIN FY11","FY12","FY13","FY14","FY15","FY16","FY17","FY18",
+        "FY19","FY20","END FY20"), limits = c(1,11)) +
+        labs(fill="CI (%)") +
+        ggtitle("Forecasts from ARIMA method,
+                City of Memphis Budget")
+
+MBudget_ARPlot
+
+ARMeanTab <- tibble(MBudget_ARIMA_Forecast$mean)
+
+#ggsave("Forecasts from ARIMA method.png",
+#       dpi=600, dev='png', height=8, width=11.3, units="in", MBudget_ARPlot)
+
+## END PART 2 ##
