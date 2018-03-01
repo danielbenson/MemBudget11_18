@@ -442,3 +442,41 @@ ARMeanTab <- tibble(MBudget_ARIMA_Forecast$mean)
 #       dpi=600, dev='png', height=8, width=11.3, units="in", MBudget_ARPlot)
 
 ## END PART 2 ##
+
+## BEGIN PART 3 ##
+## Note: a new session was used for this portion, so relevant libraries were
+## re-loaded and the FY_8yr_Adopted_Fund_Clean.csv file was read-in again.
+
+library(dplyr)
+library(tidyr)
+
+CAFR_BALANCE_DATA <- read.csv("CAFR_CLEAN.csv")
+
+colnames(CAFR_BALANCE_DATA)[1] <- "CAFR_FISCAL_YEAR"
+
+Budget_FY11_FY18 <- read.csv("FY_8yr_Adopted_Fund_Clean.csv",
+                        colClasses = c("character", "integer",
+                        rep("character",4), "numeric"))
+
+Adopted_Budget_8yrSUM <- Budget_FY11_FY18 %>%
+        group_by(BUDGET_NAME) %>%
+        summarize(Budget_Sum = sum(PTD_BALANCE)) %>%
+        slice(1:7)
+
+
+# In this comparison, I will assume that that the purpose of the PTD_BALANCE
+# column from the Oracle exports was to estimate net change in balance over
+# year, rather than combined ending fund balance (because the latter makes no
+# sense to me).
+
+CAFR_Bind_Prep <- CAFR_BALANCE_DATA %>%
+        select(CAFR_FISCAL_YEAR, CHANGE_OVER_YEAR) %>%
+        slice(15:21)
+
+Budget_V_Actuals <- cbind(CAFR_Bind_Prep,
+                          BUDGETED = Adopted_Budget_8yrSUM$Budget_Sum)
+
+colnames(Budget_V_Actuals)[2] <- "ACTUAL_CHANGE"
+
+
+# write.csv(Budget_V_Actuals, file = "Budget_V_Actuals.csv", row.names=FALSE)
